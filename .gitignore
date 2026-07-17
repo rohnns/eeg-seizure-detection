@@ -1,0 +1,36 @@
+# Dataset
+data/raw/
+CHBMIT/
+*.edf
+
+# Generated features
+data/features/
+features/
+*.csv
+*.parquet
+
+# Models
+models/
+*.joblib
+*.pkl
+
+# Results
+results/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
