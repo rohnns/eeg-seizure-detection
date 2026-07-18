@@ -71,23 +71,34 @@ def load_persisted_feature_dataset(features_dir: Path) -> tuple[pd.DataFrame, pd
     feature_frames: list[pd.DataFrame] = []
     label_frames: list[pd.Series] = []
     metadata_frames: list[pd.DataFrame] = []
-    for feature_path in feature_paths:
+    
+    for i, feature_path in enumerate(feature_paths):
         base = feature_path.name.removesuffix("_features.parquet").removesuffix("_features.csv")
         label_path = shard_dir / f"{base}_labels.csv"
         metadata_path = shard_dir / f"{base}_metadata.csv"
+
         df = _load_feature_frame(feature_path)
 
-        print(feature_path.name, df.shape)
+        if i < 5:
+            print(feature_path.name, "shape=", df.shape, "n_cols=", len(df.columns))
+            print("  first10cols=", list(df.columns[:10]))
 
         feature_frames.append(df)
         label_frames.append(pd.read_csv(label_path).iloc[:, 0].rename("label"))
         metadata_frames.append(pd.read_csv(metadata_path))
 
-    print(len(feature_frames))
-    print(feature_frames[0].shape)
-    print(feature_frames[1].shape)
-    print(feature_frames[0].head())
+    col_counts = [len(df.columns) for df in feature_frames]
+    col_sets = [set(df.columns) for df in feature_frames]
+    union_cols = set().union(*col_sets)
+    print("=== PRE-CONCAT DIAGNOSTICS ===")
+    print("n_shards:", len(feature_frames))
+    print("per-shard col counts: min=", min(col_counts), "max=", max(col_counts), "mean=", sum(col_counts) / len(col_counts))
+    print("sum of per-shard col counts (axis=1-style bug bound):", sum(col_counts))
+    print("size of UNION of column names (axis=0 outer-join bound):", len(union_cols))
+    print("total rows across shards:", sum(df.shape[0] for df in feature_frames))
     X = pd.concat(feature_frames, ignore_index=True)
+    print("=== POST-CONCAT ===")
+    print("X.shape:", X.shape)
     y = pd.concat(label_frames, ignore_index=True)
     metadata = pd.concat(metadata_frames, ignore_index=True)
     return X, y, metadata
@@ -112,8 +123,22 @@ def run_pipeline(config: PipelineConfig = CONFIG) -> dict[str, dict[str, float]]
 
     LOGGER.info("Processing %s recordings one at a time", len(recordings))
     for index, recording in enumerate(recordings, start=1):
-        shard_paths = get_feature_shard_paths(config.paths.features_dir, recording.patient_id, recording.recording_id)
-        if shard_paths.features.exists() and shard_paths.labels.exists() and shard_paths.metadata.exists():
+        shard_paths = get_feature_shard_paths(
+            config.paths.features_dir,
+            recording.patient_id,
+            recording.recording_id,
+        )
+
+        feature_exists = (
+            shard_paths.features.exists()
+            or shard_paths.features.with_suffix(".csv").exists()
+        )
+
+        if (
+            feature_exists
+            and shard_paths.labels.exists()
+            and shard_paths.metadata.exists()
+        ):
             LOGGER.info(
                 "[%s/%s] Skipping recording %s for patient %s because persisted shards already exist",
                 index,
@@ -128,6 +153,7 @@ def run_pipeline(config: PipelineConfig = CONFIG) -> dict[str, dict[str, float]]
             annotations=annotations,
             patient_id=recording.patient_id,
         )
+
         LOGGER.info(
             "[%s/%s] Segmenting recording %s for patient %s",
             index,
@@ -156,10 +182,13 @@ def run_pipeline(config: PipelineConfig = CONFIG) -> dict[str, dict[str, float]]
         del windows, X_recording, y_recording, metadata_recording
 
     LOGGER.info("Loading persisted feature dataset from disk")
+    X, y, metadata = load_persisted_feature_dataset(config.paths.features_dir)
+
+    print("=== FINAL DATASET ===")
     print("X shape:", X.shape)
     print("y shape:", y.shape)
     print("metadata shape:", metadata.shape)
-    X, y, metadata = load_persisted_feature_dataset(config.paths.features_dir)
+
     save_feature_artifacts(X, y, metadata, config.paths.features_dir)
 
     LOGGER.info("Performing patient-wise train/test split")

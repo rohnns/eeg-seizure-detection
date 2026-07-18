@@ -21,7 +21,7 @@ class ProjectPaths:
     data_dir: Path = PROJECT_ROOT / "data"
     raw_data_dir: Path = Path("D:/CHBMIT")
     processed_data_dir: Path = PROJECT_ROOT / "data" / "processed"
-    features_dir: Path = PROJECT_ROOT / "data" / "features"
+    features_dir = Path(r"D:\CHBMIT\features")
     model_dir: Path = PROJECT_ROOT / "models"
     results_dir: Path = PROJECT_ROOT / "results"
     metrics_dir: Path = PROJECT_ROOT / "results" / "metrics"
