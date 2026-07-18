@@ -30,6 +30,24 @@ class ProjectPaths:
     reports_dir: Path = PROJECT_ROOT / "reports"
 
 
+
+# The 23-channel bipolar montage shared by the overwhelming majority of CHB-MIT
+# recordings (present in >=655 of 686 recordings per
+# reports/dataset_analysis/dataset_summary.json -> channel_consistency). A strict
+# intersection across literally every recording is empty (a couple of recordings,
+# e.g. patient chb24's monopolar sessions, use an entirely different montage/naming
+# scheme), so this list -- not an empty set -- is the actual "common subset" the
+# dataset-analysis report recommended selecting before freezing this config.
+CHBMIT_CANONICAL_CHANNELS: tuple[str, ...] = (
+    "FP1-F7", "F7-T7", "T7-P7", "P7-O1",
+    "FP1-F3", "F3-C3", "C3-P3", "P3-O1",
+    "FP2-F4", "F4-C4", "C4-P4", "P4-O2",
+    "FP2-F8", "F8-T8", "T8-P8-0", "P8-O2",
+    "FZ-CZ", "CZ-PZ",
+    "P7-T7", "T7-FT9", "FT9-FT10", "FT10-T8", "T8-P8-1",
+)
+
+
 @dataclass(frozen=True)
 class SignalConfig:
     """EEG preprocessing parameters."""
@@ -40,7 +58,12 @@ class SignalConfig:
     target_sampling_frequency_hz: float | None = None
     normalize: bool = True
     channel_strategy: str = "common_subset"
-    selected_channels: tuple[str, ...] | None = None
+    # NOTE: this was left as None in the originally frozen config, which silently
+    # disabled channel harmonization (src/preprocessing.py::select_channels is a
+    # no-op when this is falsy) even though dataset analysis explicitly flagged
+    # that channel harmonization was required before freezing config. That is the
+    # actual root cause of the varying per-shard feature-column counts.
+    selected_channels: tuple[str, ...] | None = CHBMIT_CANONICAL_CHANNELS
 
 
 @dataclass(frozen=True)
