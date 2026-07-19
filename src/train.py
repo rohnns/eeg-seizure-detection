@@ -30,6 +30,7 @@ from src.utils import ensure_directory, save_pickle, load_pickle
 MODEL_DTYPES: dict[str, np.dtype | None] = {
     "logistic_regression": np.float64,
     "random_forest": np.float32,
+    "xgboost": np.float32,
 }
 
 
@@ -47,6 +48,46 @@ def prepare_features_for_model(X: pd.DataFrame, model_name: str) -> pd.DataFrame
     if target_dtype is None or X.to_numpy(copy=False).dtype == target_dtype:
         return X
     return X.astype(target_dtype, copy=False)
+
+
+def log_class_distribution(y: pd.Series, label: str) -> dict[int, int]:
+    """Return and log exact class counts for a binary label series."""
+    counts = y.value_counts(dropna=False).sort_index().to_dict()
+    total = int(len(y))
+    positives = int(counts.get(1, 0))
+    negatives = int(counts.get(0, 0))
+    print(f"{label} class distribution: total={total}, class_0={negatives}, class_1={positives}")
+    return {int(k): int(v) for k, v in counts.items()}
+
+
+def balanced_binary_subsample(
+    X: pd.DataFrame,
+    y: pd.Series,
+    random_state: int,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Create a reproducible balanced subset for binary training.
+
+    Keeps all minority-class samples and randomly samples the same number of
+    majority-class samples, using a fixed RNG seed for reproducibility.
+    This applies only to the training set and leaves the held-out patient test
+    split unchanged.
+    """
+    y_values = y.to_numpy(copy=False)
+    minority_mask = y_values == 1
+    majority_mask = y_values == 0
+
+    n_minority = int(minority_mask.sum())
+    n_majority = int(majority_mask.sum())
+    if n_minority == 0 or n_majority == 0:
+        return X, y
+
+    rng = np.random.default_rng(random_state)
+    minority_indices = np.flatnonzero(minority_mask)
+    majority_indices = np.flatnonzero(majority_mask)
+    sampled_majority = rng.choice(majority_indices, size=n_minority, replace=False)
+    selected_indices = np.sort(np.concatenate([minority_indices, sampled_majority]))
+
+    return X.iloc[selected_indices].reset_index(drop=True), y.iloc[selected_indices].reset_index(drop=True)
 
 
 def split_by_patient(X, y, metadata, test_patients: tuple[str, ...] = ()):  # noqa: ANN001
@@ -148,9 +189,32 @@ def build_random_forest_model(config: ModelConfig):
     )
 
 
+def build_xgboost_model(config: ModelConfig, scale_pos_weight: float):
+    """Build an XGBoost classifier with imbalance-aware weighting."""
+    try:
+        from xgboost import XGBClassifier
+    except ImportError as exc:  # pragma: no cover - dependency installation issue
+        raise ImportError("xgboost is required for the XGBoost model. Install requirements.txt.") from exc
+
+    return XGBClassifier(
+        n_estimators=300,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        tree_method="hist",
+        random_state=config.random_seed,
+        n_jobs=-1,
+        scale_pos_weight=scale_pos_weight,
+    )
+
+
 MODEL_REGISTRY = {
     "logistic_regression": build_logistic_regression_model,
     "random_forest": build_random_forest_model,
+    "xgboost": build_xgboost_model,
 }
 
 
@@ -158,7 +222,20 @@ def get_model(model_name: str, config: ModelConfig):
     """Build a model by registry name."""
     if model_name not in MODEL_REGISTRY:
         raise KeyError(f"Unknown model {model_name}. Available: {sorted(MODEL_REGISTRY)}")
+    if model_name == "xgboost":
+        raise ValueError("XGBoost model construction requires scale_pos_weight; use get_model_with_training_stats().")
     return MODEL_REGISTRY[model_name](config)
+
+
+def get_model_with_training_stats(model_name: str, config: ModelConfig, y_train: pd.Series):
+    """Build a model that may need training-set statistics."""
+    if model_name == "xgboost":
+        y_values = y_train.to_numpy(copy=False)
+        n_positive = int(np.sum(y_values == 1))
+        n_negative = int(np.sum(y_values == 0))
+        scale_pos_weight = float(n_negative / max(n_positive, 1))
+        return build_xgboost_model(config, scale_pos_weight=scale_pos_weight)
+    return get_model(model_name, config)
 
 
 def train_model(model, X_train, y_train):  # noqa: ANN001
@@ -176,9 +253,17 @@ def train_all_models(X_train, y_train, config: ModelConfig) -> dict[str, Any]:  
     """
     trained = {}
     for model_name in config.model_names:
-        model = get_model(model_name, config)
+        model = get_model_with_training_stats(model_name, config, y_train)
         model_X_train = prepare_features_for_model(X_train, model_name)
-        trained[model_name] = train_model(model, model_X_train, y_train)
+        if model_name == "logistic_regression":
+            model_X_train, model_y_train = balanced_binary_subsample(
+                model_X_train,
+                y_train,
+                random_state=config.random_seed,
+            )
+        else:
+            model_y_train = y_train
+        trained[model_name] = train_model(model, model_X_train, model_y_train)
         del model_X_train
     return trained
 

@@ -94,7 +94,7 @@ class FeatureConfig:
 class ModelConfig:
     """Classical ML model parameters."""
 
-    model_names: tuple[str, ...] = ("logistic_regression", "random_forest")
+    model_names: tuple[str, ...] = ("logistic_regression", "random_forest", "xgboost")
     random_seed: int = 42
     test_patients: tuple[str, ...] = ()
     logistic_regression_max_iter: int = 1000

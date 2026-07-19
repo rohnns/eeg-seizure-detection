@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +36,137 @@ class EEGRecording:
     sampling_frequency: float
     channel_names: list[str]
     duration_seconds: float
+    montage_audit: "RecordingMontageAudit | None" = None
+
+
+@dataclass(frozen=True)
+class RecordingMontageAudit:
+    """Per-recording montage classification and exclusion details."""
+
+    patient_id: str
+    recording_id: str
+    file_path: Path
+    channel_names: tuple[str, ...]
+    classification: str
+    reference_channel: str | None = None
+    missing_endpoints: tuple[str, ...] = ()
+    missing_derivations: tuple[str, ...] = ()
+    excluded: bool = False
+
+
+CANONICAL_BIPOLAR_CHANNELS: tuple[str, ...] = (
+    "FP1-F7",
+    "F7-T7",
+    "T7-P7",
+    "P7-O1",
+    "FP1-F3",
+    "F3-C3",
+    "C3-P3",
+    "P3-O1",
+    "FP2-F4",
+    "F4-C4",
+    "C4-P4",
+    "P4-O2",
+    "FP2-F8",
+    "F8-T8",
+    "T8-P8-0",
+    "P8-O2",
+    "FZ-CZ",
+    "CZ-PZ",
+    "P7-T7",
+    "T7-FT9",
+    "FT9-FT10",
+    "FT10-T8",
+    "T8-P8-1",
+)
+
+
+def _parse_bipolar_endpoints(channel_name: str) -> tuple[str, str] | None:
+    parts = channel_name.split("-")
+    if len(parts) < 2:
+        return None
+    if len(parts) > 2 and parts[-1].isdigit():
+        parts = parts[:-1]
+    if len(parts) < 2:
+        return None
+    return parts[0], parts[1]
+
+
+def _available_referential_electrodes(channel_names: list[str], reference_channel: str) -> set[str]:
+    electrodes: set[str] = set()
+    suffix = f"-{reference_channel}"
+    for channel in channel_names:
+        if channel.endswith(suffix):
+            electrodes.add(channel[: -len(suffix)])
+    return electrodes
+
+
+def audit_recording_montage(recording: EEGRecording) -> RecordingMontageAudit:
+    """Classify one recording's montage and reconstructability."""
+    channel_names = tuple(recording.channel_names)
+    available = set(channel_names)
+    canonical_present = all(channel in available for channel in CANONICAL_BIPOLAR_CHANNELS)
+    if canonical_present:
+        return RecordingMontageAudit(
+            patient_id=recording.patient_id,
+            recording_id=recording.recording_id,
+            file_path=recording.file_path,
+            channel_names=channel_names,
+            classification="canonical_bipolar",
+        )
+
+    for reference_channel in ("CS2",):
+        referential_electrodes = _available_referential_electrodes(recording.channel_names, reference_channel)
+        if not referential_electrodes:
+            continue
+
+        missing_endpoints: set[str] = set()
+        missing_derivations: list[str] = []
+        for derivation in CANONICAL_BIPOLAR_CHANNELS:
+            endpoints = _parse_bipolar_endpoints(derivation)
+            if endpoints is None:
+                missing_derivations.append(derivation)
+                continue
+            left, right = endpoints
+            left_ref = f"{left}-{reference_channel}"
+            right_ref = f"{right}-{reference_channel}"
+            if left not in referential_electrodes:
+                missing_endpoints.add(left)
+            if right not in referential_electrodes:
+                missing_endpoints.add(right)
+            if left not in referential_electrodes or right not in referential_electrodes:
+                missing_derivations.append(derivation)
+
+        if missing_derivations:
+            return RecordingMontageAudit(
+                patient_id=recording.patient_id,
+                recording_id=recording.recording_id,
+                file_path=recording.file_path,
+                channel_names=channel_names,
+                classification="non_reconstructable_referential",
+                reference_channel=reference_channel,
+                missing_endpoints=tuple(sorted(missing_endpoints)),
+                missing_derivations=tuple(sorted(set(missing_derivations))),
+                excluded=True,
+            )
+
+        return RecordingMontageAudit(
+            patient_id=recording.patient_id,
+            recording_id=recording.recording_id,
+            file_path=recording.file_path,
+            channel_names=channel_names,
+            classification="reconstructable_referential",
+            reference_channel=reference_channel,
+        )
+
+    return RecordingMontageAudit(
+        patient_id=recording.patient_id,
+        recording_id=recording.recording_id,
+        file_path=recording.file_path,
+        channel_names=channel_names,
+        classification="other_unknown",
+        excluded=True,
+    )
 
 
 def find_edf_files(data_dir: Path) -> list[Path]:
@@ -77,7 +208,7 @@ def load_edf_file(file_path: Path, data_dir: Path | None = None, preload: bool =
     raw = mne.io.read_raw_edf(file_path, preload=preload, verbose="ERROR")
     sampling_frequency = float(raw.info["sfreq"])
     duration_seconds = float(raw.n_times / sampling_frequency) if sampling_frequency else 0.0
-    return EEGRecording(
+    recording = EEGRecording(
         patient_id=get_patient_id_from_path(file_path, data_dir),
         recording_id=get_recording_id_from_path(file_path),
         file_path=file_path,
@@ -86,6 +217,7 @@ def load_edf_file(file_path: Path, data_dir: Path | None = None, preload: bool =
         channel_names=list(raw.ch_names),
         duration_seconds=duration_seconds,
     )
+    return EEGRecording(**{**recording.__dict__, "montage_audit": audit_recording_montage(recording)})
 
 
 def load_patient_recordings(patient_dir: Path, preload: bool = True) -> list[EEGRecording]:
@@ -163,12 +295,13 @@ def get_seizure_intervals_for_recording(
     ]
 
 
-def load_dataset(data_dir: Path, preload: bool = True) -> tuple[list[EEGRecording], list[SeizureAnnotation]]:
-    """Load all EDF recordings and all seizure annotations."""
+def load_dataset(data_dir: Path, preload: bool = True) -> tuple[list[EEGRecording], list[SeizureAnnotation], list[RecordingMontageAudit]]:
+    """Load all EDF recordings, annotations, and montage audit results."""
     data_dir = Path(data_dir)
     edf_files = find_edf_files(data_dir)
     if not edf_files:
         raise FileNotFoundError(f"No EDF files found below {data_dir}")
     recordings = [load_edf_file(path, data_dir, preload=preload) for path in edf_files]
     annotations = load_annotations(data_dir)
-    return recordings, annotations
+    audits = [recording.montage_audit for recording in recordings if recording.montage_audit is not None]
+    return recordings, annotations, audits

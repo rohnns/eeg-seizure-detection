@@ -1,4 +1,4 @@
-"""SHAP explainability for Random Forest seizure predictions."""
+"""SHAP explainability for tree-based seizure predictions."""
 
 from __future__ import annotations
 
@@ -21,6 +21,15 @@ def create_shap_explainer(model, X_background):  # noqa: ANN001
     """Create a SHAP TreeExplainer for a tree model."""
     import shap
 
+    # XGBoost + newer SHAP versions can fail when TreeExplainer tries to parse
+    # the sklearn wrapper's serialized base_score (e.g. "[5E-1]"). Using the
+    # underlying booster is the smallest compatible fix and leaves the trained
+    # model and evaluation pipeline unchanged.
+    if hasattr(model, "get_booster"):
+        try:
+            return shap.TreeExplainer(model.get_booster(), data=X_background)
+        except Exception:
+            pass
     return shap.TreeExplainer(model, data=X_background)
 
 
@@ -123,4 +132,27 @@ def run_random_forest_explainability(
 
     local = explain_single_prediction(model, explainer, explain_sample.iloc[[0]], list(X_test.columns))
     save_json(local, predictions_dir / "local_explanation_example.json")
+    return local
+
+
+def run_xgboost_explainability(
+    model,
+    X_train,
+    X_test,
+    output_dir: Path,
+    config: ExplainabilityConfig,
+) -> dict[str, object]:  # noqa: ANN001
+    """Run global and local SHAP explanations for XGBoost."""
+    background = sample_frame(X_train, config.shap_background_samples, config.random_seed)
+    explain_sample = sample_frame(X_test, config.shap_explain_samples, config.random_seed)
+    explainer = create_shap_explainer(model, background)
+    shap_values = compute_shap_values(explainer, explain_sample)
+
+    plots_dir = ensure_directory(Path(output_dir) / "plots")
+    predictions_dir = ensure_directory(Path(output_dir) / "predictions")
+    plot_shap_summary(shap_values, explain_sample, plots_dir / "shap_summary_xgboost.png")
+    plot_shap_bar(shap_values, explain_sample, plots_dir / "shap_bar_xgboost.png")
+
+    local = explain_single_prediction(model, explainer, explain_sample.iloc[[0]], list(X_test.columns))
+    save_json(local, predictions_dir / "local_explanation_xgboost_example.json")
     return local

@@ -130,7 +130,7 @@ def segment_recording(
     signal_config,
 ) -> list[SegmentedWindow]:
     """Preprocess and segment one EEG recording."""
-    processed_raw = preprocess_raw_recording(recording.raw, signal_config)
+    processed_raw = preprocess_raw_recording(recording.raw, signal_config, montage_audit=recording.montage_audit)
     data, sfreq, channel_names = raw_to_numpy(processed_raw, normalize=signal_config.normalize)
     return segment_recording_from_array(
         data=data,
