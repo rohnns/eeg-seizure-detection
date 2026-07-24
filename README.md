@@ -4,25 +4,111 @@ A patient-wise classical machine learning pipeline for automated seizure detecti
 
 This project builds and evaluates an automated detector on the CHB-MIT Scalp EEG Database, using handcrafted signal-processing features and classical models chosen specifically because they keep every feature inspectable and every prediction explainable with SHAP, a property raw-waveform deep models do not have.
 
-The central methodological constraint is evaluation honesty: seizures make up roughly 0.35% of the labeled windows in this dataset, and the train/test split is done by patient, not by window. A window-random split would let a model learn patient-specific EEG characteristics as a shortcut, inflating test performance without reflecting how the model would perform on a genuinely new patient — which is the only question that matters for a clinical detector. All results in this repository come from a strict patient-wise, patient-disjoint split.
-
-> **Status.** This is a research baseline evaluated on a single pediatric dataset (CHB-MIT). It has not been validated on adult populations, other EEG hardware, or in a clinical setting, and should be read accordingly.
+The central methodological constraint is evaluation honesty: seizures make up roughly 0.35% of the labeled windows in this dataset, and the train/test split is done by patient, not by window. All results in this repository come from a strict patient-wise, patient-disjoint split.
 
 ---
 
 ## Table of Contents
 
+- [Repository Structure](#repository-structure)
+- [Installation](#installation)
+- [Running the Pipeline](#running-the-pipeline)
+- [Launching the Dashboard](#launching-the-dashboard)
 - [Features](#features)
 - [Dataset](#dataset)
 - [Pipeline](#pipeline)
 - [Results](#results)
 - [Explainability](#explainability)
 - [Dashboard](#dashboard)
-- [Repository Structure](#repository-structure)
-- [Installation](#installation)
-- [Running the Pipeline](#running-the-pipeline)
-- [Launching the Dashboard](#launching-the-dashboard)
-- [Future Work](#future-work)
+
+---
+## Repository Structure
+
+```text
+eeg-seizure-detection/
+├── main.py                        # Pipeline entry point / orchestration
+├── config.py                      # Frozen dataclass configuration (single source of truth)
+├── requirements.txt
+├── README.md
+│
+├── src/
+│   ├── data_loader.py              # EDF/annotation loading + per-recording montage audit
+│   ├── preprocessing.py            # Filtering, channel selection, normalization
+│   ├── segmentation.py             # Windowing and window-level seizure labeling
+│   ├── feature_extraction.py       # Time- and frequency-domain feature computation
+│   ├── train.py                    # Model construction and patient-wise split
+│   ├── evaluate.py                 # Standardized metrics, ROC/PR curves, confusion matrices
+│   ├── explain.py                  # SHAP explainability (global + local)
+│   ├── dataset_analysis.py         # Pre-pipeline dataset characterization
+│   └── utils.py                    # Logging, I/O, and serialization helpers
+│
+├── dashboard/
+│   ├── app.py                      # Streamlit entry point (Overview / Performance / Explainability)
+│   ├── data_access.py              # Read-only access to results/ and reports/ artifacts
+│   ├── components.py               # Shared UI components (metric cards, comparison table, pipeline diagram)
+│   └── styles.py                   # Dashboard theming
+│
+├── reports/
+│   ├── dataset_analysis/           # Dataset characterization report (channels, durations, class balance)
+│   └── montage_audit/              # Per-recording montage classification and exclusion log
+│
+└── results/                        # Produced by running the pipeline (not checked in)
+    ├── metrics/                    # Per-model JSON metrics + comparison table
+    └── plots/                      # Confusion matrices, ROC/PR curves, SHAP plots
+```
+
+---
+
+## Installation
+
+Requires Python 3.10+.
+
+```bash
+git clone https://github.com/rohnns/eeg-seizure-detection.git
+cd eeg-seizure-detection
+
+python -m venv .venv
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+
+pip install -r requirements.txt
+```
+
+Core dependencies: `mne` (EDF I/O and signal processing), `numpy`, `pandas`, `scipy`, `scikit-learn`, `xgboost`, `shap`, `matplotlib`, `seaborn`, `streamlit`.
+
+---
+
+## Running the Pipeline
+
+Download the [CHB-MIT Scalp EEG Database](https://physionet.org/content/chbmit/1.0.0/) separately — it is not distributed with this repository — and place it under `data/raw/chbmit/`:
+
+```text
+data/raw/chbmit/
+  chb01/
+    chb01_01.edf
+    chb01_02.edf
+    ...
+    chb01-summary.txt
+  chb02/
+    ...
+```
+
+If your copy lives elsewhere, override `ProjectPaths.raw_data_dir` in `config.py` accordingly.
+
+```bash
+python main.py
+```
+
+This runs preprocessing, segmentation, feature extraction, model training, evaluation, and SHAP explainability, writing all artifacts under `results/`. The pipeline is idempotent at the recording and model level: it skips any recording whose feature shard already exists and any model whose saved artifact already exists, so an interrupted run resumes rather than recomputes from scratch.
+
+---
+
+## Launching the Dashboard
+
+Once `results/` has been populated by at least one pipeline run:
+
+```bash
+streamlit run dashboard/app.py
+```
 
 ---
 
@@ -122,95 +208,7 @@ Pages degrade gracefully: any page whose underlying artifact hasn't been generat
 
 ---
 
-## Repository Structure
 
-```text
-eeg-seizure-detection/
-├── main.py                        # Pipeline entry point / orchestration
-├── config.py                      # Frozen dataclass configuration (single source of truth)
-├── requirements.txt
-├── README.md
-│
-├── src/
-│   ├── data_loader.py              # EDF/annotation loading + per-recording montage audit
-│   ├── preprocessing.py            # Filtering, channel selection, normalization
-│   ├── segmentation.py             # Windowing and window-level seizure labeling
-│   ├── feature_extraction.py       # Time- and frequency-domain feature computation
-│   ├── train.py                    # Model construction and patient-wise split
-│   ├── evaluate.py                 # Standardized metrics, ROC/PR curves, confusion matrices
-│   ├── explain.py                  # SHAP explainability (global + local)
-│   ├── dataset_analysis.py         # Pre-pipeline dataset characterization
-│   └── utils.py                    # Logging, I/O, and serialization helpers
-│
-├── dashboard/
-│   ├── app.py                      # Streamlit entry point (Overview / Performance / Explainability)
-│   ├── data_access.py              # Read-only access to results/ and reports/ artifacts
-│   ├── components.py               # Shared UI components (metric cards, comparison table, pipeline diagram)
-│   └── styles.py                   # Dashboard theming
-│
-├── reports/
-│   ├── dataset_analysis/           # Dataset characterization report (channels, durations, class balance)
-│   └── montage_audit/              # Per-recording montage classification and exclusion log
-│
-└── results/                        # Produced by running the pipeline (not checked in)
-    ├── metrics/                    # Per-model JSON metrics + comparison table
-    └── plots/                      # Confusion matrices, ROC/PR curves, SHAP plots
-```
-
----
-
-## Installation
-
-Requires Python 3.10+.
-
-```bash
-git clone https://github.com/rohnns/eeg-seizure-detection.git
-cd eeg-seizure-detection
-
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
-
-pip install -r requirements.txt
-```
-
-Core dependencies: `mne` (EDF I/O and signal processing), `numpy`, `pandas`, `scipy`, `scikit-learn`, `xgboost`, `shap`, `matplotlib`, `seaborn`, `streamlit`.
-
----
-
-## Running the Pipeline
-
-Download the [CHB-MIT Scalp EEG Database](https://physionet.org/content/chbmit/1.0.0/) separately — it is not distributed with this repository — and place it under `data/raw/chbmit/`:
-
-```text
-data/raw/chbmit/
-  chb01/
-    chb01_01.edf
-    chb01_02.edf
-    ...
-    chb01-summary.txt
-  chb02/
-    ...
-```
-
-If your copy lives elsewhere, override `ProjectPaths.raw_data_dir` in `config.py` accordingly.
-
-```bash
-python main.py
-```
-
-This runs preprocessing, segmentation, feature extraction, model training, evaluation, and SHAP explainability, writing all artifacts under `results/`. The pipeline is idempotent at the recording and model level: it skips any recording whose feature shard already exists and any model whose saved artifact already exists, so an interrupted run resumes rather than recomputes from scratch.
-
----
-
-## Launching the Dashboard
-
-Once `results/` has been populated by at least one pipeline run:
-
-```bash
-streamlit run dashboard/app.py
-```
-
----
 
 ## Future Work
 
