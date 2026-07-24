@@ -9,8 +9,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from components import display_image, highlight_best_values
-from data_access import RESULTS_DIR, available_models, load_comparison_table, load_json_file, load_metrics, plot_path
+from components import display_image, highlight_best_values, render_pipeline_diagram
+from data_access import RESULTS_DIR, available_models, load_comparison_table, load_json_file, plot_path
 from styles import inject_global_styles
 
 MODEL_LABELS = {
@@ -41,103 +41,103 @@ def _dataset_summary() -> dict:
     return load_json_file(RESULTS_DIR / "dataset_analysis" / "dataset_summary.json")
 
 
-@st.cache_data(show_spinner=False)
-def _metrics(model_name: str) -> dict:
-    return load_metrics(model_name)
-
-
 def _metric_card(label: str, value: str, help_text: str | None = None) -> None:
     st.metric(label=label, value=value, help=help_text)
 
 
 def render_overview() -> None:
     st.header("Overview")
-    st.markdown("EEG Seizure Detection using Classical Machine Learning on the CHB-MIT dataset.")
-
-    summary = _dataset_summary()
-    total_windows = int(summary.get("total_windows", 250594))
-    seizure_windows = int(summary.get("seizure_windows", 7900))
-    non_seizure_windows = int(summary.get("non_seizure_windows", max(0, total_windows - seizure_windows)))
-    prevalence = float(summary.get("seizure_prevalence", seizure_windows / total_windows if total_windows else 0.0))
-    num_features = int(summary.get("num_features", 529))
-
-    cols = st.columns(5)
-    cols[0].metric("Total windows", f"{total_windows:,}")
-    cols[1].metric("Seizure windows", f"{seizure_windows:,}")
-    cols[2].metric("Non-seizure windows", f"{non_seizure_windows:,}")
-    cols[3].metric("Seizure prevalence", f"{prevalence * 100:.3f}%")
-    cols[4].metric("Features", f"{num_features:,}")
-
-    best = None
-    comparison = _comparison_df()
-    if not comparison.empty and "f1" in comparison.columns:
-        best = comparison.sort_values(["f1", "roc_auc"], ascending=[False, False]).iloc[0]
-
-    left, right = st.columns([1.05, 0.95], gap="large")
-    with left:
-        st.subheader("Pipeline diagram")
-        st.code(
-        "Dataset analysis → preprocessing → segmentation → feature extraction → patient-wise split → classical models → evaluation → SHAP",
-        language="text",
+    st.markdown(
+        "Detecting epileptic seizures from scalp EEG using classical, interpretable "
+        "machine learning \u2014 trained on patient recordings from the CHB-MIT Scalp "
+        "EEG Database and evaluated patient-wise, so no patient appears in both the "
+        "training and test sets."
     )
+
+    st.subheader("Dataset")
+    summary = _dataset_summary()
+    if not summary:
+        st.warning(
+            "Dataset summary not yet generated. Run dataset analysis to produce "
+            "`results/dataset_analysis/dataset_summary.json`."
+        )
+    else:
+        total_windows = summary.get("total_windows")
+        seizure_windows = summary.get("seizure_windows")
+        num_features = summary.get("num_features")
+        non_seizure_windows = None
+        prevalence = None
+        if total_windows is not None and seizure_windows is not None:
+            non_seizure_windows = int(total_windows) - int(seizure_windows)
+            prevalence = (seizure_windows / total_windows) if total_windows else None
+
+        cols = st.columns(5)
+        cols[0].metric("Total windows", f"{int(total_windows):,}" if total_windows is not None else "N/A")
+        cols[1].metric("Seizure windows", f"{int(seizure_windows):,}" if seizure_windows is not None else "N/A")
+        cols[2].metric(
+            "Non-seizure windows",
+            f"{non_seizure_windows:,}" if non_seizure_windows is not None else "N/A",
+        )
+        cols[3].metric(
+            "Seizure prevalence",
+            f"{prevalence * 100:.3f}%" if prevalence is not None else "N/A",
+        )
+        cols[4].metric("Features", f"{int(num_features):,}" if num_features is not None else "N/A")
+
+    st.divider()
+
+    left, right = st.columns([1, 1], gap="large")
+    with left:
+        st.subheader("Pipeline")
+        render_pipeline_diagram(
+            [
+                "CHB-MIT EEG",
+                "Preprocessing",
+                "Feature Extraction",
+                "Patient-wise Split",
+                "Model Training",
+                "Evaluation",
+                "SHAP Explainability",
+            ]
+        )
     with right:
-        st.subheader("Best model")
+        st.subheader("Best Model (Highest F1)")
+        comparison = _comparison_df()
+        best = None
+        if not comparison.empty and "f1" in comparison.columns:
+            best = comparison.sort_values(["f1", "roc_auc"], ascending=[False, False]).iloc[0]
         if best is not None:
             st.metric(_label(str(best["model"])), f"F1 {_fmt(best.get('f1'))}")
             st.caption(
                 f"Accuracy {_fmt(best.get('accuracy'))} | Precision {_fmt(best.get('precision'))} | "
                 f"Recall {_fmt(best.get('recall'))} | ROC-AUC {_fmt(best.get('roc_auc'))}"
             )
+            st.caption("Full model comparison and curves are on the Performance page.")
         else:
-            st.info("Comparison table unavailable.")
-
-    st.subheader("Key metrics")
-    xgboost_metrics = _metrics("xgboost") if "xgboost" in available_models() else {}
-    if xgboost_metrics:
-        c1, c2, c3 = st.columns(3)
-        c1.metric("ROC-AUC", _fmt(xgboost_metrics.get("roc_auc")))
-        c2.metric("F1", _fmt(xgboost_metrics.get("f1")))
-        c3.metric("Balanced accuracy", _fmt(xgboost_metrics.get("balanced_accuracy")))
+            st.info("Comparison table unavailable. Run evaluation to generate `results/metrics/`.")
 
 
 def render_performance() -> None:
     st.header("Performance")
     df = _comparison_df()
     if df.empty:
-        st.info("Performance table is unavailable.")
+        st.info("Performance table is unavailable. Run evaluation to generate `results/metrics/`.")
         return
 
     display_cols = [c for c in ["model", "accuracy", "precision", "recall", "f1", "specificity", "balanced_accuracy", "roc_auc", "average_precision"] if c in df.columns]
     metric_cols = [c for c in display_cols if c != "model"]
     st.dataframe(highlight_best_values(df[display_cols], metric_cols), use_container_width=True, hide_index=True)
+    st.caption("Highlighted cells mark the best value per metric across models.")
 
-    c1, c2, c3 = st.columns(3)
-    if "f1" in df.columns:
-        c1.metric("Best F1", _fmt(df["f1"].max()))
-    if "roc_auc" in df.columns:
-        c2.metric("Best ROC-AUC", _fmt(df["roc_auc"].max()))
-    if "balanced_accuracy" in df.columns:
-        c3.metric("Best Balanced accuracy", _fmt(df["balanced_accuracy"].max()))
-
+    st.divider()
+    st.subheader("ROC and Precision-Recall Curves")
     models = [m for m in ["logistic_regression", "random_forest", "xgboost"] if m in available_models()]
-    if models:
-        cards = st.columns(len(models))
-        for col, model_name in zip(cards, models):
-            metrics = _metrics(model_name)
-            with col:
-                st.markdown(f"**{_label(model_name)}**")
-                st.metric("F1", _fmt(metrics.get("f1")))
-                st.metric("Recall", _fmt(metrics.get("recall")))
-                st.metric("ROC-AUC", _fmt(metrics.get("roc_auc")))
-
-    left, right = st.columns(2, gap="large")
-    with left:
-        st.subheader("ROC curves")
-        for model_name in models:
+    for model_name in models:
+        st.markdown(f"**{_label(model_name)}**")
+        c1, c2 = st.columns(2, gap="large")
+        with c1:
             display_image(plot_path(f"{model_name}_roc_curve.png"), f"{_label(model_name)} ROC curve")
-    with right:
-        st.subheader("Precision-Recall curves")
-        for model_name in models:
+        with c2:
             display_image(plot_path(f"{model_name}_pr_curve.png"), f"{_label(model_name)} PR curve")
 
 
