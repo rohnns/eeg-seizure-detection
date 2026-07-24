@@ -48,9 +48,6 @@ eeg-seizure-detection/
 │   ├── components.py               # Shared UI components (metric cards, comparison table, pipeline diagram)
 │   └── styles.py                   # Dashboard theming
 │
-├── reports/
-│   ├── dataset_analysis/           # Dataset characterization report (channels, durations, class balance)
-│   └── montage_audit/              # Per-recording montage classification and exclusion log
 │
 └── results/                        # Produced by running the pipeline (not checked in)
     ├── metrics/                    # Per-model JSON metrics + comparison table
@@ -153,7 +150,7 @@ flowchart TD
 
 - **Preprocessing** rejects recordings with an incompatible montage before any signal processing happens, then filters and normalizes what remains.
 - **Segmentation** converts each accepted recording into a sequence of fixed-length, labeled windows — the unit every downstream model and metric operates on.
-- **Feature extraction** reduces each window from raw multichannel time series to a fixed-size numeric vector, independently verified against the underlying per-channel formulas.
+- **Feature extraction** reduces each window from raw multichannel time series to a fixed-size numeric vector, computes a fixed-size feature vector using per-channel time- and frequency-domain descriptors.
 - **Patient-wise split** is what makes the following stage's metrics trustworthy as an estimate of new-patient performance.
 - **Model training** fits three models with different, algorithm-appropriate approaches to the same class imbalance.
 - **Evaluation** applies one standardized metric schema and one set of plots to every model, so results are directly comparable.
