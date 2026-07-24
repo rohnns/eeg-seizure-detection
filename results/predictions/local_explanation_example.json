@@ -1,0 +1,48 @@
+{
+  "prediction": 0,
+  "prediction_label": "non-seizure",
+  "seizure_probability": 0.0,
+  "text_explanation": "The model predicted non-seizure mainly because P8_O2_kurtosis, FP1_F3_hjorth_activity, P3_O1_rms reduced seizure evidence.",
+  "top_features": [
+    {
+      "feature": "P8_O2_kurtosis",
+      "shap_value": -0.0005739677932310625
+    },
+    {
+      "feature": "FP1_F3_hjorth_activity",
+      "shap_value": -0.0003720853121413055
+    },
+    {
+      "feature": "F8_T8_theta_power",
+      "shap_value": 0.00034295324268659956
+    },
+    {
+      "feature": "P3_O1_rms",
+      "shap_value": -0.0003162179508043862
+    },
+    {
+      "feature": "P7_O1_skewness",
+      "shap_value": -0.00031470997516931594
+    },
+    {
+      "feature": "P7_O1_theta_power",
+      "shap_value": -0.0003145665322525558
+    },
+    {
+      "feature": "FP1_F7_std",
+      "shap_value": -0.0003109754496798503
+    },
+    {
+      "feature": "F7_T7_beta_power",
+      "shap_value": -0.0003070983925696849
+    },
+    {
+      "feature": "P7_T7_line_length",
+      "shap_value": -0.00029749049238978023
+    },
+    {
+      "feature": "FP2_F8_std",
+      "shap_value": -0.00029179471468321555
+    }
+  ]
+}

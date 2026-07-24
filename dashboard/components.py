@@ -66,3 +66,32 @@ def render_pipeline_diagram(steps: list[str]) -> None:
     parts.append("</svg>")
 
     st.markdown("".join(parts), unsafe_allow_html=True)
+
+
+def render_key_value_table(rows: list[tuple[str, str]]) -> None:
+    """Render a static, theme-adaptive two-column label/value table.
+
+    Purely presentational — takes no artifacts or file paths, so it renders
+    identically regardless of what has or hasn't been generated on disk.
+    """
+    row_divs = []
+    for i, (label, value) in enumerate(rows):
+        border = "border-bottom:1px solid rgba(127,127,127,0.18);" if i < len(rows) - 1 else ""
+        row_divs.append(
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'padding:0.55rem 0.1rem;{border}">'
+            f'<span style="opacity:0.7;font-size:0.92rem;">{label}</span>'
+            f'<span style="font-weight:600;font-size:0.92rem;">{value}</span>'
+            f"</div>"
+        )
+    st.markdown(f'<div style="margin-top:0.2rem;">{"".join(row_divs)}</div>', unsafe_allow_html=True)
+
+
+def render_callout(text: str) -> None:
+    """Render a subtle blockquote-style callout. Static text, no dynamic state."""
+    st.markdown(
+        '<div style="margin-top:1rem;padding:0.75rem 1rem;border-left:3px solid '
+        'rgba(127,127,127,0.45);background:rgba(127,127,127,0.06);border-radius:0 '
+        f'0.4rem 0.4rem 0;font-size:0.92rem;line-height:1.55;opacity:0.9;">{text}</div>',
+        unsafe_allow_html=True,
+    )

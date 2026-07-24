@@ -1,0 +1,48 @@
+{
+  "prediction": 0,
+  "prediction_label": "non-seizure",
+  "seizure_probability": 0.11056553572416306,
+  "text_explanation": "The model predicted non-seizure mainly because F7_T7_gamma_power, FT10_T8_theta_power reduced seizure evidence.",
+  "top_features": [
+    {
+      "feature": "T7_FT9_gamma_power",
+      "shap_value": 0.3454821090109181
+    },
+    {
+      "feature": "P3_O1_kurtosis",
+      "shap_value": 0.34322665325773416
+    },
+    {
+      "feature": "C4_P4_skewness",
+      "shap_value": 0.3225633075099904
+    },
+    {
+      "feature": "P3_O1_skewness",
+      "shap_value": 0.31875919307232836
+    },
+    {
+      "feature": "F8_T8_theta_power",
+      "shap_value": 0.2587784553703386
+    },
+    {
+      "feature": "F7_T7_gamma_power",
+      "shap_value": -0.2544821938266978
+    },
+    {
+      "feature": "FT10_T8_theta_power",
+      "shap_value": -0.24447821770008887
+    },
+    {
+      "feature": "P7_O1_relative_alpha_power",
+      "shap_value": 0.20557463463861494
+    },
+    {
+      "feature": "F4_C4_gamma_power",
+      "shap_value": 0.1792656284820987
+    },
+    {
+      "feature": "FP2_F4_skewness",
+      "shap_value": 0.1683625653560739
+    }
+  ]
+}

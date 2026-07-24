@@ -14,9 +14,6 @@ models/
 *.joblib
 *.pkl
 
-# Results
-results/
-
 # Python
 __pycache__/
 *.pyc

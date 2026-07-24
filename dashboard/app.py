@@ -9,8 +9,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from components import display_image, highlight_best_values, render_pipeline_diagram
-from data_access import RESULTS_DIR, available_models, load_comparison_table, load_json_file, plot_path
+from components import display_image, highlight_best_values, render_callout, render_key_value_table, render_pipeline_diagram
+from data_access import available_models, load_comparison_table, plot_path
 from styles import inject_global_styles
 
 MODEL_LABELS = {
@@ -36,11 +36,6 @@ def _comparison_df() -> pd.DataFrame:
     return load_comparison_table()
 
 
-@st.cache_data(show_spinner=False)
-def _dataset_summary() -> dict:
-    return load_json_file(RESULTS_DIR / "dataset_analysis" / "dataset_summary.json")
-
-
 def _metric_card(label: str, value: str, help_text: str | None = None) -> None:
     st.metric(label=label, value=value, help=help_text)
 
@@ -55,34 +50,24 @@ def render_overview() -> None:
     )
 
     st.subheader("Dataset")
-    summary = _dataset_summary()
-    if not summary:
-        st.warning(
-            "Dataset summary not yet generated. Run dataset analysis to produce "
-            "`results/dataset_analysis/dataset_summary.json`."
-        )
-    else:
-        total_windows = summary.get("total_windows")
-        seizure_windows = summary.get("seizure_windows")
-        num_features = summary.get("num_features")
-        non_seizure_windows = None
-        prevalence = None
-        if total_windows is not None and seizure_windows is not None:
-            non_seizure_windows = int(total_windows) - int(seizure_windows)
-            prevalence = (seizure_windows / total_windows) if total_windows else None
-
-        cols = st.columns(5)
-        cols[0].metric("Total windows", f"{int(total_windows):,}" if total_windows is not None else "N/A")
-        cols[1].metric("Seizure windows", f"{int(seizure_windows):,}" if seizure_windows is not None else "N/A")
-        cols[2].metric(
-            "Non-seizure windows",
-            f"{non_seizure_windows:,}" if non_seizure_windows is not None else "N/A",
-        )
-        cols[3].metric(
-            "Seizure prevalence",
-            f"{prevalence * 100:.3f}%" if prevalence is not None else "N/A",
-        )
-        cols[4].metric("Features", f"{int(num_features):,}" if num_features is not None else "N/A")
+    st.markdown("**CHB-MIT Scalp EEG Database**")
+    st.caption("Public benchmark dataset for EEG seizure detection.")
+    render_key_value_table(
+        [
+            ("Patients", "23"),
+            ("EEG Recordings", "664 EDF files"),
+            ("Annotated Seizures", "198"),
+            ("Sampling Rate", "256 Hz"),
+            ("Resolution", "16-bit"),
+            ("Channels", "23 bipolar EEG channels"),
+        ]
+    )
+    render_callout(
+        "Long-term scalp EEG recordings from pediatric epilepsy patients. Raw EEG "
+        "signals are preprocessed, segmented into fixed-length windows, transformed "
+        "into handcrafted features, and evaluated using patient-wise train/test "
+        "splits to measure generalization to previously unseen patients."
+    )
 
     st.divider()
 
@@ -139,6 +124,14 @@ def render_performance() -> None:
             display_image(plot_path(f"{model_name}_roc_curve.png"), f"{_label(model_name)} ROC curve")
         with c2:
             display_image(plot_path(f"{model_name}_pr_curve.png"), f"{_label(model_name)} PR curve")
+
+    st.divider()
+    st.subheader("Confusion Matrices")
+    if models:
+        cm_cols = st.columns(len(models))
+        for col, model_name in zip(cm_cols, models):
+            with col:
+                display_image(plot_path(f"{model_name}_confusion_matrix.png"), f"{_label(model_name)} confusion matrix")
 
 
 def render_explainability() -> None:
