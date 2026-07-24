@@ -113,9 +113,9 @@ The pipeline performs:
 4. Overlapping window segmentation with seizure-overlap labels
 5. Time-domain and frequency-domain feature extraction
 6. Patient-wise train/test split
-7. Logistic Regression and Random Forest training
-8. Metrics, ROC curves, confusion matrices
-9. SHAP explainability for Random Forest
+7. Logistic Regression, Random Forest, and XGBoost training
+8. Metrics, ROC curves, confusion matrices, and PR curves
+9. SHAP explainability for tree-based models
 
 Expected outputs:
 
@@ -123,11 +123,25 @@ Expected outputs:
 data/features/features.csv
 data/features/labels.csv
 data/features/metadata.csv
-models/logistic_regression.pkl
-models/random_forest.pkl
-results/metrics/*_metrics.json
-results/plots/*_confusion_matrix.png
-results/plots/*_roc_curve.png
-results/plots/shap_*_random_forest.png
-results/predictions/local_explanation_example.json
+  models/logistic_regression.pkl
+  models/random_forest.pkl
+  models/xgboost.pkl
+  results/metrics/*_metrics.json
+  results/plots/*_confusion_matrix.png
+  results/plots/*_roc_curve.png
+  results/plots/*_pr_curve.png
+  results/plots/shap_*_random_forest.png
+  results/plots/shap_*_xgboost.png
+  results/predictions/local_explanation_example.json
 ```
+
+## Run Dashboard
+
+After installing dependencies, launch the visualization-only dashboard:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+The dashboard only reads artifacts already present in `results/` and does not
+rerun feature extraction, training, evaluation, or SHAP computation.

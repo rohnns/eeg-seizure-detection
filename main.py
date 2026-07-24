@@ -11,13 +11,12 @@ import pandas as pd
 
 from config import CONFIG, PipelineConfig
 from src.data_loader import RecordingMontageAudit, get_seizure_intervals_for_recording, load_dataset
-from src.evaluate import evaluate_model
+from src.evaluate import STANDARD_METRIC_KEYS, evaluate_model
 from src.explain import run_random_forest_explainability, run_xgboost_explainability
 from src.feature_extraction import extract_feature_matrix
 from src.segmentation import segment_recording
 from src.train import load_model, log_class_distribution, prepare_features_for_model, save_all_models, split_by_patient, train_all_models
 from src.utils import create_project_directories, ensure_directory, set_random_seed, setup_logging
-from src.threshold_optimization import run_threshold_sweep, write_threshold_artifacts
 
 LOGGER = logging.getLogger(__name__)
 
@@ -197,23 +196,15 @@ def load_or_train_models(
     return trained_or_loaded
 
 
-def save_model_comparison_report(
-    metrics: dict[str, dict[str, float]],
-    threshold_summaries: dict[str, pd.Series],
-    output_dir: Path,
-) -> None:
-    """Persist a compact classical model comparison report."""
+def save_model_comparison_report(metrics: dict[str, dict[str, float]], output_dir: Path) -> None:
+    """Persist the classical model comparison report."""
     ensure_directory(output_dir)
     rows = []
     for model_name, metric_row in metrics.items():
-        row = {"model": model_name, **metric_row, "threshold": 0.5}
-        rows.append(row)
-        if model_name in threshold_summaries:
-            optimized = {"model": f"{model_name}_optimized", **threshold_summaries[model_name].to_dict()}
-            rows.append(optimized)
-    df = pd.DataFrame(rows)
+        rows.append({"model": model_name, **metric_row})
+    df = pd.DataFrame(rows, columns=["model", *STANDARD_METRIC_KEYS])
     df.to_csv(output_dir / "classical_model_comparison.csv", index=False)
-    markdown = ["# Classical Model Comparison", "", df.to_markdown(index=False)]
+    markdown = ["# Classical Model Comparison", "", df.to_markdown(index=False, floatfmt=".4f")]
     (output_dir / "classical_model_comparison.md").write_text("\n".join(markdown), encoding="utf-8")
 
 
@@ -333,27 +324,13 @@ def run_pipeline(config: PipelineConfig = CONFIG) -> dict[str, dict[str, float]]
     # (see src/train.py) rather than one shared evaluate_all_models call -- keeps
     # at most one transient float64 copy of X_test alive at a time instead of
     # needing a dtype that satisfies every model simultaneously.
-    metrics = {}
-    threshold_summaries: dict[str, pd.Series] = {}
+    #
+    metrics: dict[str, dict[str, float]] = {}
     for model_name, model in models.items():
         model_X_test = prepare_features_for_model(X_test, model_name)
-        metrics[model_name] = evaluate_model(model, model_X_test, y_test, config.paths.results_dir, model_name)
+        evaluation = evaluate_model(model, model_X_test, y_test, config.paths.results_dir, model_name)
+        metrics[model_name] = evaluation.metrics
         del model_X_test
-
-    # Threshold optimization for tree-based models without retraining.
-    for model_name in ("random_forest", "xgboost"):
-        if model_name in models:
-            model_X_test = prepare_features_for_model(X_test, model_name)
-            threshold_results = run_threshold_sweep(
-                model=models[model_name],
-                X_test=model_X_test,
-                y_test=y_test,
-                model_name=model_name,
-                output_dir=config.paths.results_dir / "threshold_optimization" / model_name,
-            )
-            write_threshold_artifacts(threshold_results, config.paths.results_dir / "threshold_optimization" / model_name, model_name)
-            threshold_summaries[model_name] = threshold_results.sort_values(["f1", "recall", "threshold"], ascending=[False, False, True]).iloc[0]
-            del model_X_test
 
     if "random_forest" in models:
         LOGGER.info("Running SHAP explainability for Random Forest")
@@ -375,7 +352,7 @@ def run_pipeline(config: PipelineConfig = CONFIG) -> dict[str, dict[str, float]]
             config=config.explainability,
         )
 
-    save_model_comparison_report(metrics, threshold_summaries, config.paths.results_dir / "metrics")
+    save_model_comparison_report(metrics, config.paths.results_dir / "metrics")
 
     LOGGER.info("Pipeline complete")
     return metrics
