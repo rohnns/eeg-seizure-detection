@@ -111,7 +111,6 @@ streamlit run dashboard/app.py
 
 ## Features
 
-- **Montage-audited EDF loading** — every recording's channel montage is checked against a canonical 23-channel bipolar layout before use; recordings that use an incompatible montage are excluded, with the reason logged rather than silently dropped or forced into an invalid channel mapping.
 - **Preprocessing** — bandpass filtering (0.5–40 Hz), 50 Hz notch filtering, and per-channel amplitude normalization.
 - **Segmentation** — fixed 4-second windows with 50% overlap, labeled positive if they overlap any clinician-annotated seizure interval.
 - **Handcrafted feature extraction** — 23 time- and frequency-domain features per channel (11 time-domain: mean, standard deviation, RMS, variance, skewness, kurtosis, zero crossings, line length, and the three Hjorth parameters; 12 frequency-domain: five band powers, five relative band powers, spectral entropy, and dominant frequency) across the 23-channel montage, yielding a 529-dimension feature vector per window.
